@@ -5,25 +5,31 @@
         <title>Watercolor painting (p5.js + ml5.js)</title>
         <meta name="author" content="Nicolás Azuara Hernández">
         <style>
+            * {
+                box-sizing: border-box;
+            }
             html, body {
                 padding: 0;
                 margin: 0;
                 overflow: hidden;
             }
             body {
-                background-color: darkgray;
+                background-color: white;
                 font-size: 16px;
             }
             button {
                 margin: 0;
-                padding: 5px;
+                padding: 15px 5px;
                 border: 1px solid black;
                 cursor: pointer;
             }
+            button + button {
+                border-top-width: 0;
+            }
         </style>
-        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.3/css/all.min.css" integrity="sha512-iBBXm8fW90+nuLcSKlbmrPcLa0OT92xO1BIsZ+ywDWZCvqsWgccV3gFoRBv0z+8dLJgyAHIhR35VZc2oM/gI1w==" crossorigin="anonymous" />
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/p5.js/1.3.1/p5.min.js" integrity="sha512-gQVBYBvfC+uyor5Teonjr9nmY1bN+DlOCezkhzg4ShpC5q81ogvFsr5IV4xXAj6HEtG7M1Pb2JCha97tVFItYQ==" crossorigin="anonymous"></script>
-        <script src="https://unpkg.com/ml5@latest/dist/ml5.min.js"></script>
+        <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.3/css/all.min.css" integrity="sha256-2H3fkXt6FEmrReK448mDVGKb3WW2ZZw35gI7vqHOE4Y=" crossorigin="anonymous">
+        <script src="https://cdn.jsdelivr.net/npm/p5@1.3.1/lib/p5.min.js" integrity="sha256-+N1hBSQ9B9d59u+Co9sObEFHBsFTMeFt/NqtZNwq1Ps=" crossorigin="anonymous"></script>
+        <script src="https://cdn.jsdelivr.net/npm/ml5@0.6.1/dist/ml5.min.js" integrity="sha256-dCBjcqq8kDv0BJiL7vsZsCbRsM+Xi8b0ufvLxTyPC08=" crossorigin="anonymous"></script>
     </head>
     <body>
         <script src="sketch.js"></script>

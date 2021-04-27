@@ -1,4 +1,4 @@
-/**
+/*
     MIT License
 
     Copyright (c) 2021 Nicolás Azuara Hernández (@nicolasazuara)
@@ -30,6 +30,7 @@
     
     Requirements:
     -   Webcam (optional)
+    -   Microphone (optional)
     
     Notes:
     -   Mobile devices aren't an option:
@@ -37,42 +38,39 @@
         ml5.js is too CPU intensive, draining too much power;
     -   A background color is required for color blending;
     -   Canvas resizing is too much of a hassle    
-**/
+*/
 
-let drawFrameRate = 15,                                 // Shared frame rate between video and canvas (user-defined)
-    brushRadius = 30,                                   // Radius of the brush used for painting (user-defined)
+let drawFrameRate = 30,                                 // Shared frame rate between video and canvas (user-defined)
+    brushRadius = 50,                                   // Radius of the brush used for painting (user-defined)
     bgColor = 'linen',                                  // Color for the canvas (user-defined)
     colors = [                                          // Color palette (user-defined)
         'brown',
+        'crimson',
+        'tomato',
         'darkgoldenrod',
         'yellow',
-        'white',
-        'violet',
-        'tomato',
         'olivedrab',
-        'deepskyblue',
-        'black',
-        'crimson',
         'darkgreen',
+        'deepskyblue',
         'navy',
+        'violet',
     ],
+    tracking = {                                        // Body parts to be tracked on video (user-defined)
+        leftWrist: true,
+        rightWrist: true,
+        leftAnkle: true,
+        rightAngle: true,
+    },
     video,                                              // Video container
     poseNet,                                            // Machine learning model that allows for Real-time Human Pose Estimation
     poses = [],                                         // Array of poses detected from poseNet
     brushColor,                                         // Color of the brush used for painting
     picker,                                             // Color picker indicator
-    buttonDownload,                                     // Download button
-    buttonReset,                                        // Reset button
-    spacing = window.innerWidth / (colors.length + 1),  // Separation between colors in palette
+    buttonDownload,                                     // Download canvas button
+    buttonClean,                                        // Clean canvas button
+    spacing = window.innerWidth / (colors.length),      // Separation between colors in palette
+    counter = 0,
     lastMouse = {                                       // Save last mouse location inside canvas if pressed
-        x: 0,
-        y: 0,
-    },
-    lastLeft = {                                        // Save last left wrist location of pose
-        x: 0,
-        y: 0,
-    },
-    lastRight = {                                       // Save last right wrist location of pose
         x: 0,
         y: 0,
     };
@@ -81,10 +79,10 @@ let drawFrameRate = 15,                                 // Shared frame rate bet
 class brush {
     
     constructor(v) {
-        this.vertices = v;                  // Array of vertices for the brush shape
-        this.newVertices = [];              // Array of vertices for the paint shape
-        this.color = color(brushColor);     // Color for the paint
-        this.color.setAlpha(2);             // Opacity of 2/255 for the paint shape
+        this.vertices = v;                      // Array of vertices for the brush shape
+        this.newVertices = [];                  // Array of vertices for the paint shape
+        this.color = color(brushColor);         // Color for the paint
+        this.color.setAlpha(2);                 // Opacity of 2/255 for the paint shape
     }
     
     // This method simulates the paint expansion
@@ -130,8 +128,8 @@ class brush {
 class strokes {
     
     constructor(brushObject) {
-        this.total = 25;        // Total of paint layers
-        this.layers = [];       // Array of paint layers
+        this.total = random(10, 30);    // Total of paint layers
+        this.layers = [];               // Array of paint layers
         
         // For the total of the paint layers, generate a new brush stroke and store it in the paint layers
         for(let i = 0; i < this.total; i++) {
@@ -162,16 +160,16 @@ class strokes {
 function setup() {
     
     // The paint canvas with a size equals to the viewport
-    canvas = createCanvas(window.innerWidth, window.innerHeight - spacing);
+    canvas = createCanvas(window.innerWidth - 50, window.innerHeight - 50);
     
     // Adjust draw frame rate
     frameRate(drawFrameRate);
     
-    // Video height adjusted to viewport height, video frame rate limited to draw frame rate and no audio.
+    // Video height adjusted to viewport width, minus buttons video frame rate limited to draw frame rate and no audio
     let constraints = {
             video: {
                 mandatory: {
-                    maxHeight: window.innerHeight,
+                    maxWidth: width,
                 },
             optional: [{
                 maxFrameRate: drawFrameRate,
@@ -180,32 +178,36 @@ function setup() {
             audio: false,
         };
     video = createCapture(constraints);
-    video.size(AUTO, window.innerHeight - spacing);
+    video.size(width, AUTO);
     
     // Generate the color palette at the bottom of the page
     for(let i = 0; i < colors.length; i++) {
         let colorPick = createDiv('&nbsp;');
-        colorPick.size(spacing, spacing);
+        colorPick.size(spacing, 50);
         colorPick.style('background-color', colors[i]);
-        colorPick.position(i * spacing, window.innerHeight - spacing);
+        colorPick.position(i * spacing, height);
     }
     
     // Generate the color picker indicator
-    picker = createDiv('<span class="fa-stack fa-2x"><i class="fas fa-circle fa-stack-2x"></i><i class="fas fa-arrow-down fa-stack-1x fa-inverse"></i></span>');
+    picker = createDiv('<span class="fa-stack fa-lg fa-fw"><i class="fas fa-circle fa-stack-2x"></i><i class="fas fa-arrow-down fa-stack-1x fa-inverse"></i></span>');
     picker.size(spacing);
     picker.style('text-align', 'center');
     
     // Generate the download canvas button
     buttonDownload = createButton('<i class="fas fa-download fa-lg fa-fw"></i>');
-    buttonDownload.position(colors.length * spacing, window.innerHeight - spacing);
+    buttonDownload.position(width, 0);
+    buttonDownload.size(50);
+    buttonDownload.style('text-align', 'center');
     buttonDownload.mousePressed(canvasDownload);
     
-    // Generate the reset canvas button
-    buttonReset = createButton('<i class="fas fa-broom fa-lg fa-fw"></i>');
-    buttonReset.position(colors.length * spacing, window.innerHeight - spacing  + buttonDownload.size().height);
-    buttonReset.mousePressed(canvasReset);
+    // Generate the clean canvas button
+    buttonClean = createButton('<i class="fas fa-broom fa-lg fa-fw"></i>');
+    buttonClean.position(width, buttonDownload.size().height);
+    buttonClean.size(50);
+    buttonClean.style('text-align', 'center');
+    buttonClean.mousePressed(canvasClean);
 
-    // Create a new poseNet method with a single detection, it will fire an event that fills the poses array everytime a new pose is detected
+    // Create a new poseNet method, it will fire an event that fills the poses array everytime a new pose is detected
     poseNet = ml5.poseNet(video);
     poseNet.on('pose', function(results) {
         poses = results;
@@ -215,84 +217,107 @@ function setup() {
     video.hide();
     
     // Start canvas original state
-    canvasReset();
+    canvasClean();
+    
 }
 
 // Draw on canvas (p5.js specific)
 function draw() {
     
-    // Select the color from palette based on mouse position
-    for(let i = 0; i < colors.length; i++) {
-        if(mouseX > i * spacing && mouseX < (i * spacing) + spacing && mouseY > window.innerHeight - spacing && mouseY < window.innerHeight) {
-            brushColor = colors[i];
-            colorPicker(brushColor);
-        }
-    }
-    
-    // If the camera detects a pose
+    // If the camera detects one or morse poses
     if(poses.length > 0) {
         
-        // Ignore all but first pose
-        let pose = poses[0].pose,
-            leftWrist = pose['leftWrist'],
-            rightWrist = pose['rightWrist'];
-        
-        // If left wrist found and in different position as last saved
-        if(leftWrist.confidence > 0.60) {
-            if(lastLeft.x != leftWrist.x && lastLeft.y != leftWrist.y) {
-                
-                // Save left wrist position
-                lastLeft = {
-                    x: leftWrist.x,
-                    y: leftWrist.y,
-                }
+        for(let i = 0; i < poses.length; i += 1) {
+            
+            // Select a random color
+            counter++;
+            if(counter > random(1, drawFrameRate)) {
+                brushColor = random(colors);
+                colorPicker(brushColor);
+                counter = 1;
+            }
+            
+            // Select the pose
+            let pose = poses[i].pose,
+                leftWrist = pose['leftWrist'],
+                rightWrist = pose['rightWrist'],
+                leftAnkle = pose['leftAnkle'],
+                rightAnkle = pose['rightAnkle'];
+            
+            // If left wrist found and tracking is active
+            if(tracking.leftWrist && leftWrist.confidence > 0.60) {
                 
                 // Start painting in left wrist position
                 paint(leftWrist.x, leftWrist.y);
             }
-        }
-        
-        // If right wrist found and in different position as last saved
-        if(rightWrist.confidence > 0.60) {
-            if(lastRight.x != rightWrist.x && lastRight.y != rightWrist.y) {
-                
-                // Save left wrist position
-                lastRight = {
-                    x: rightWrist.x,
-                    y: rightWrist.y,
-                }
-                
+
+            // If right wrist found and tracking is active
+            if(tracking.rightWrist && rightWrist.confidence > 0.60) {
+
                 // Start painting in right wrist position
                 paint(rightWrist.x, rightWrist.y);
             }
+
+            // If left ankle found and tracking is active
+            if(tracking.leftAnkle && leftAnkle.confidence > 0.60) {
+                
+                // Start painting in left ankle position
+                paint(leftAnkle.x, leftAnkle.y);
+            }
+
+            // If right ankle found and tracking is active
+            if(tracking.rightAngle && rightAnkle.confidence > 0.60) {
+                
+                // Start painting in right ankle position
+                paint(rightAnkle.x, rightAnkle.y);
+            }
+            
         }
         
-    // Else if the mouse position is saved
-    } else if(lastMouse.x > 0 && lastMouse.y > 0) {
+    // Else
+    } else {
         
-        // Start painting in saved mouse position
-        paint(lastMouse.x, lastMouse.y);
+        // Select the color from palette based on mouse position
+        for(let i = 0; i < colors.length; i++) {
+            if(mouseX > i * spacing && mouseX < (i * spacing) + spacing && mouseY > height && mouseY < window.innerHeight) {
+                brushColor = colors[i];
+                colorPicker(brushColor);
+            }
+        }
         
-        // Reset last mouse position
-        lastMouse = {
-            x: 0,
-            y: 0,
-        };
+        // If the mouse position is saved
+        if(lastMouse.x > 0 && lastMouse.y > 0) {
+
+            // Start painting in saved mouse position
+            paint(lastMouse.x, lastMouse.y);
+
+            // Reset last mouse position
+            lastMouse = {
+                x: 0,
+                y: 0,
+            };
+            
+        }
     }
 }
 
 // Mouse clicked event handler (p5.js specific)
 function mouseClicked() {
+    
+    // Save mouse position
     saveMouse();
 }
 
 // Mouse dragged event handler (p5.js specific)
 function mouseDragged() {
+    
+    // Save mouse position
     if(mouseIsPressed) saveMouse();
 }
 
 // Set canvas original state
-function canvasReset() {
+function canvasClean() {
+    counter = 0;
     clear();
     brushColor = random(colors);
     background(bgColor);
@@ -306,12 +331,12 @@ function canvasDownload() {
 
 // Set color picker position
 function colorPicker(c) {
-    picker.position(colors.indexOf(c) * spacing, window.innerHeight - spacing - picker.size().height / 2);
+    picker.position(colors.indexOf(c) * spacing, height - picker.size().height / 2);
 }
 
 // Save mouse position inside canvas
 function saveMouse() {
-    if(mouseX <= window.innerWidth && mouseY <= window.innerHeight - spacing) {
+    if(mouseX <= width && mouseY <= height) {
         lastMouse = {
             x: mouseX,
             y: mouseY,
