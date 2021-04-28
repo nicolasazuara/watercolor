@@ -36,40 +36,46 @@
     -   Mobile devices aren't an option:
         p5.js camera implementation is buggy and not mirrored by default (front-facing camera);
         ml5.js is too CPU intensive, draining too much power;
-    -   A background color is required for color blending;
-    -   Canvas resizing is too much of a hassle    
+        Real-time audio analysis is the final nail in the coffin;
+    -   A background color is required for color blending.
+    -   Canvas resizing is too much of a hassle.
 */
 
 let drawFrameRate = 30,                                 // Shared frame rate between video and canvas (user-defined)
     brushRadius = 50,                                   // Radius of the brush used for painting (user-defined)
     bgColor = 'linen',                                  // Color for the canvas (user-defined)
-    colors = [                                          // Color palette (user-defined)
-        'brown',
-        'crimson',
-        'tomato',
-        'darkgoldenrod',
-        'yellow',
-        'olivedrab',
-        'darkgreen',
-        'deepskyblue',
-        'navy',
-        'violet',
+    colors = [                                          // Color palette, representing music notes (user-defined)
+        '#28ff00',                                      // C
+        '#00ffe8',                                      // C#
+        '#007cff',                                      // D
+        '#0500ff',                                      // D#
+        '#4500ea',                                      // E
+        '#57009e',                                      // F
+        '#740000',                                      // F#
+        '#b30000',                                      // G
+        '#ee0000',                                      // G#
+        '#ff6300',                                      // A
+        '#ffec00',                                      // A#
+        '#99ff00',                                      // B
     ],
-    tracking = {                                        // Body parts to be tracked on video (user-defined)
+    tracking = false,                                   // Pose tracking status, disabled by default (user-defined)
+    trackingBodyParts = {                               // Body parts to be tracked on video (user-defined)
         leftWrist: true,
         rightWrist: true,
         leftAnkle: true,
         rightAngle: true,
     },
     video,                                              // Video container
-    poseNet,                                            // Machine learning model that allows for Real-time Human Pose Estimation
+    audio,                                              // Audio context
+    audioAnalyser,                                      // An audio node able to provide real-time frequency information
+    poseNet,                                            // Machine learning model that allows for Real-time human pose estimation
     poses = [],                                         // Array of poses detected from poseNet
     brushColor,                                         // Color of the brush used for painting
     picker,                                             // Color picker indicator
+    buttonTracking,                                     // Pose tracking button
     buttonDownload,                                     // Download canvas button
     buttonClean,                                        // Clean canvas button
     spacing = window.innerWidth / (colors.length),      // Separation between colors in palette
-    counter = 0,
     lastMouse = {                                       // Save last mouse location inside canvas if pressed
         x: 0,
         y: 0,
@@ -185,6 +191,7 @@ function setup() {
         let colorPick = createDiv('&nbsp;');
         colorPick.size(spacing, 50);
         colorPick.style('background-color', colors[i]);
+        colorPick.style('user-select', 'none');
         colorPick.position(i * spacing, height);
     }
     
@@ -193,18 +200,28 @@ function setup() {
     picker.size(spacing);
     picker.style('text-align', 'center');
     
+    // Generate the pose tracking button
+    buttonTracking = createButton('<span class="fa-stack fa-lg fa-fw"><i class="fas fa-walking fa-stack-1x"></i><i class="fas fa-slash fa-stack-1x fa-inverse"></i></span>');
+    buttonTracking.position(width, 0);
+    buttonTracking.size(50);
+    buttonTracking.style('text-align', 'center');
+    buttonTracking.attribute('title', 'Enable pose tracking');
+    buttonTracking.mousePressed(trackingToggle);
+    
     // Generate the download canvas button
     buttonDownload = createButton('<i class="fas fa-download fa-lg fa-fw"></i>');
-    buttonDownload.position(width, 0);
+    buttonDownload.position(width, buttonTracking.size().height);
     buttonDownload.size(50);
     buttonDownload.style('text-align', 'center');
+    buttonDownload.attribute('title', 'Download canvas');
     buttonDownload.mousePressed(canvasDownload);
     
     // Generate the clean canvas button
     buttonClean = createButton('<i class="fas fa-broom fa-lg fa-fw"></i>');
-    buttonClean.position(width, buttonDownload.size().height);
+    buttonClean.position(width, buttonTracking.size().height + buttonDownload.size().height);
     buttonClean.size(50);
     buttonClean.style('text-align', 'center');
+    buttonClean.attribute('title', 'Clean canvas');
     buttonClean.mousePressed(canvasClean);
 
     // Create a new poseNet method, it will fire an event that fills the poses array everytime a new pose is detected
@@ -224,17 +241,42 @@ function setup() {
 // Draw on canvas (p5.js specific)
 function draw() {
     
-    // If the camera detects one or morse poses
-    if(poses.length > 0) {
+    // Select the color from palette based on mouse position
+    for(let i = 0; i < colors.length; i++) {
+        if(mouseX > i * spacing && mouseX < (i * spacing) + spacing && mouseY > height && mouseY < window.innerHeight) {
+            brushColor = colors[i];
+            colorPicker(brushColor);
+            let clickEvent = document.createEvent('MouseEvents');
+            clickEvent.initEvent('mouseup', true, true);
+            document.querySelector('canvas').dispatchEvent(clickEvent);
+        }
+    }
+    
+    // If the camera detects one or morse poses and tracking is active
+    if(tracking && poses.length > 0) {
         
+        // For each pose
         for(let i = 0; i < poses.length; i += 1) {
             
-            // Select a random color
-            counter++;
-            if(counter > random(1, drawFrameRate)) {
-                brushColor = random(colors);
-                colorPicker(brushColor);
-                counter = 1;
+            // If tracking is active, there's an audio stream and the mouse isn't on color palette
+            if(tracking && audio && mouseY <= height) {
+                
+                // Detect audio frequency from signal using ACF2+
+                let buffer = new Float32Array(2048);
+                audioAnalyser.getFloatTimeDomainData(buffer);
+                let frequency = acf2plus(buffer);
+                
+                // If an audio frequency exists
+                if(frequency) {
+                    
+                    // Calculate sound note from audio frequency
+                    let note = (round(12 * (Math.log(frequency / 440) / Math.log(2))) + 69) % 12;
+                    
+                    // Use sound note to select color from palette
+                    brushColor = colors[note];
+                    colorPicker(brushColor);
+
+                }
             }
             
             // Select the pose
@@ -245,28 +287,28 @@ function draw() {
                 rightAnkle = pose['rightAnkle'];
             
             // If left wrist found and tracking is active
-            if(tracking.leftWrist && leftWrist.confidence > 0.60) {
+            if(trackingBodyParts.leftWrist && leftWrist.confidence > 0.60) {
                 
                 // Start painting in left wrist position
                 paint(leftWrist.x, leftWrist.y);
             }
 
             // If right wrist found and tracking is active
-            if(tracking.rightWrist && rightWrist.confidence > 0.60) {
+            if(trackingBodyParts.rightWrist && rightWrist.confidence > 0.60) {
 
                 // Start painting in right wrist position
                 paint(rightWrist.x, rightWrist.y);
             }
 
             // If left ankle found and tracking is active
-            if(tracking.leftAnkle && leftAnkle.confidence > 0.60) {
+            if(trackingBodyParts.leftAnkle && leftAnkle.confidence > 0.60) {
                 
                 // Start painting in left ankle position
                 paint(leftAnkle.x, leftAnkle.y);
             }
 
             // If right ankle found and tracking is active
-            if(tracking.rightAngle && rightAnkle.confidence > 0.60) {
+            if(trackingBodyParts.rightAngle && rightAnkle.confidence > 0.60) {
                 
                 // Start painting in right ankle position
                 paint(rightAnkle.x, rightAnkle.y);
@@ -274,30 +316,18 @@ function draw() {
             
         }
         
-    // Else
-    } else {
-        
-        // Select the color from palette based on mouse position
-        for(let i = 0; i < colors.length; i++) {
-            if(mouseX > i * spacing && mouseX < (i * spacing) + spacing && mouseY > height && mouseY < window.innerHeight) {
-                brushColor = colors[i];
-                colorPicker(brushColor);
-            }
-        }
-        
-        // If the mouse position is saved
-        if(lastMouse.x > 0 && lastMouse.y > 0) {
+    // Else if the mouse position is saved
+    } else if(lastMouse.x > 0 && lastMouse.y > 0) {
 
-            // Start painting in saved mouse position
-            paint(lastMouse.x, lastMouse.y);
+        // Start painting in saved mouse position
+        paint(lastMouse.x, lastMouse.y);
 
-            // Reset last mouse position
-            lastMouse = {
-                x: 0,
-                y: 0,
-            };
-            
-        }
+        // Reset last mouse position
+        lastMouse = {
+            x: 0,
+            y: 0,
+        };
+
     }
 }
 
@@ -317,7 +347,6 @@ function mouseDragged() {
 
 // Set canvas original state
 function canvasClean() {
-    counter = 0;
     clear();
     brushColor = random(colors);
     background(bgColor);
@@ -327,6 +356,41 @@ function canvasClean() {
 // Download canvas as image
 function canvasDownload() {
     saveCanvas('watercolor-' + new Date().getTime(), 'jpg');
+}
+
+// Toggle pose tracking status and enable an audio stream for the first time
+function trackingToggle() {
+    
+    // Toggle pose tracking status
+    if(tracking) {
+        tracking = false;
+        buttonTracking.html('<span class="fa-stack fa-lg fa-fw"><i class="fas fa-walking fa-stack-1x"></i><i class="fas fa-slash fa-stack-1x fa-inverse"></i></span>');    
+    } else {
+        tracking = true;
+        buttonTracking.html('<span class="fa-stack fa-lg fa-fw"><i class="fas fa-walking fa-stack-1x"></i></span>');
+    }
+    
+    // Enable the audio stream
+    if(! audio) {
+        navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia;
+        navigator.getUserMedia(
+            {
+                audio: true,
+            },
+            function (stream) {
+                audio = new AudioContext();
+                audioMic = audio.createMediaStreamSource(stream);
+                audioAnalyser = audio.createAnalyser();
+                audioAnalyser.fftSize = 2048;
+                audioMic.connect(audioAnalyser);
+            },
+            function (error) {
+                console.log(error);
+            }
+        );
+        
+    }
+    
 }
 
 // Set color picker position
@@ -352,4 +416,67 @@ function paint(x, y) {
         w.deform();
     }
     w.display();
+}
+
+// ACF2+ signal frequency detection method
+function acf2plus(buffer) {
+    
+    // Measure the signal
+    let rms = 0;
+    for(i = 0; i < buffer.length; i++) {
+        rms += buffer[i] * buffer[i];
+    }
+    rms = Math.sqrt(rms / buffer.length);
+    
+    // Stop. Signal too short
+    if(rms < 0.01) return false;
+    
+    // Trimming the edges of the signal
+    let r1 = 0,
+        r1Found = false,
+        r2 = buffer.length - 1,
+        r2Found = false;
+    for(let i = 0; i < buffer.length / 2; i++) {
+        if(! r1Found && Math.abs(buffer[i]) < 0.2) {
+            r1 = i;
+            r1Found = true;
+        }
+        if(! r2Found && Math.abs(buffer[buffer.length - i]) < 0.2) {
+            r2 = buffer.length - i;
+            r2Found = true;
+        }
+        if(r1Found && r2Found) break;
+    }
+    buffer = buffer.slice(r1, r2);
+    
+    // Autocorrelation
+    let c = new Array(buffer.length).fill(0);
+    for(let i = 0; i < buffer.length; i++) {
+        for(let j = 0; j < buffer.length - i; j++) {
+            c[i] = c[i] + buffer[j] * buffer[j + i];
+        }
+    }
+    
+    // Find first dip and max peak
+    let d = 0,
+        maxVal = -1,
+        maxPos = -1;
+    while(c[d] > c[d + 1]) d++;
+    for(let i = d; i < buffer.length; i++) {
+        if(c[i] > maxVal) {
+            maxVal = c[i];
+            maxPos = i;
+        }
+    }
+    
+    // Interpolation
+    let x1 = c[maxPos - 1],
+        x2 = c[maxPos],
+        x3 = c[maxPos + 1];
+    let a = (x1 + x3 - 2 * x2) / 2,
+        b = (x3 - x1) / 2;
+    if(a) maxPos = maxPos - b / (2 * a);
+    
+    // Return signal frequency
+    return round(audio.sampleRate / maxPos);
 }
