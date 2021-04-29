@@ -19,21 +19,26 @@
             }
             button {
                 margin: 0;
-                padding: 15px 5px;
+                padding: 18px 10px;
                 border: 1px solid black;
+                border-width: 0 0 1px 1px;
                 cursor: pointer;
-            }
-            button + button {
-                border-top-width: 0;
+                text-align: center;
             }
             button > .fa-stack {
                 line-height: 0.75em;
-                width: 1.25em;
-                height: 0.75em;
-                vertical-align: -0.0667em;
+                height: auto;
+                width: 100%;
             }
-            button > .fa-stack > .fa-inverse {
-                color: red;
+            button > .fa-stack > .fa-stack-2x {
+                line-height: 0.75em;
+                position: relative;
+                font-size: 1.33333em;
+            }
+            button > .fa-stack > .fa-stack-1x {
+                font-size: 0.75em;
+                text-align: right;
+                bottom: 0;
             }
         </style>
         <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@5.15.3/css/all.min.css" integrity="sha256-2H3fkXt6FEmrReK448mDVGKb3WW2ZZw35gI7vqHOE4Y=" crossorigin="anonymous">
@@ -41,6 +46,6 @@
         <script src="https://cdn.jsdelivr.net/npm/ml5@0.6.1/dist/ml5.min.js" integrity="sha256-dCBjcqq8kDv0BJiL7vsZsCbRsM+Xi8b0ufvLxTyPC08=" crossorigin="anonymous"></script>
     </head>
     <body>
-        <script src="sketch.js"></script>
+        <script src="sketch.js?update=2021-04-29"></script>
     </body>
 </html>

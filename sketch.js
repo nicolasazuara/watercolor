@@ -41,40 +41,44 @@
     -   Canvas resizing is too much of a hassle.
 */
 
-let drawFrameRate = 30,                                 // Shared frame rate between video and canvas (user-defined)
-    brushRadius = 50,                                   // Radius of the brush used for painting (user-defined)
+let drawFrameRate = 30,                                 // Shared frame rate between video and canvas
+    brushRadius = 32,                                   // Radius of the brush used for painting
     bgColor = 'linen',                                  // Color for the canvas (user-defined)
-    colors = [                                          // Color palette, representing music notes (user-defined)
-        '#28ff00',                                      // C
-        '#00ffe8',                                      // C#
-        '#007cff',                                      // D
-        '#0500ff',                                      // D#
-        '#4500ea',                                      // E
-        '#57009e',                                      // F
-        '#740000',                                      // F#
-        '#b30000',                                      // G
-        '#ee0000',                                      // G#
-        '#ff6300',                                      // A
-        '#ffec00',                                      // A#
-        '#99ff00',                                      // B
+    colors = [                                          // Color palette, representing music notes
+        '#00ff00',                                      // Blue             C
+        '#00ff80',                                      // Blue-violet      C#
+        '#00ffff',                                      // Violet           D
+        '#0080ff',                                      // Red-violet       D#
+        '#0000ff',                                      // Red              E
+        '#8000ff',                                      // Red-orange       F
+        '#ff00ff',                                      // Orange           F#
+        '#ff0080',                                      // Yellow-orange    G
+        '#ff0000',                                      // Yellow           G#
+        '#ff8000',                                      // Yellow-green     A
+        '#ffff00',                                      // Green            A#
+        '#80ff00',                                      // Blue-green       B
     ],
-    tracking = false,                                   // Pose tracking status, disabled by default (user-defined)
-    trackingBodyParts = {                               // Body parts to be tracked on video (user-defined)
+    trackingBodyParts = {                               // Body parts to be tracked on video
         leftWrist: true,
         rightWrist: true,
         leftAnkle: true,
         rightAngle: true,
     },
+    tracking = false,                                   // Pose tracking status, disabled by default
+    listening = false,                                  // Sound notes detection status, disabled by default
     video,                                              // Video container
     audio,                                              // Audio context
     audioAnalyser,                                      // An audio node able to provide real-time frequency information
-    poseNet,                                            // Machine learning model that allows for Real-time human pose estimation
+    poseNet,                                            // Machine learning model that allows for Real-time human pose detection
     poses = [],                                         // Array of poses detected from poseNet
     brushColor,                                         // Color of the brush used for painting
     picker,                                             // Color picker indicator
+    buttonIncreaseBrushSize,                            // Increase brush size button
+    buttonDecreaseBrushSize,                            // Decrease brush size button
     buttonTracking,                                     // Pose tracking button
+    buttonListening,                                    // Sound notes detection button
     buttonDownload,                                     // Download canvas button
-    buttonClean,                                        // Clean canvas button
+    buttonReset,                                        // Reset canvas button
     spacing = window.innerWidth / (colors.length),      // Separation between colors in palette
     lastMouse = {                                       // Save last mouse location inside canvas if pressed
         x: 0,
@@ -114,7 +118,7 @@ class brush {
             this.vertices.splice(1, 0, this.newVertices[i]);
         }
         
-        // Clean the paint vertices
+        // Reset the paint vertices
         this.newVertices = [];
     }
     
@@ -171,21 +175,6 @@ function setup() {
     // Adjust draw frame rate
     frameRate(drawFrameRate);
     
-    // Video height adjusted to viewport width, minus buttons video frame rate limited to draw frame rate and no audio
-    let constraints = {
-            video: {
-                mandatory: {
-                    maxWidth: width,
-                },
-            optional: [{
-                maxFrameRate: drawFrameRate,
-            }],
-            },
-            audio: false,
-        };
-    video = createCapture(constraints);
-    video.size(width, AUTO);
-    
     // Generate the color palette at the bottom of the page
     for(let i = 0; i < colors.length; i++) {
         let colorPick = createDiv('&nbsp;');
@@ -196,88 +185,102 @@ function setup() {
     }
     
     // Generate the color picker indicator
-    picker = createDiv('<span class="fa-stack fa-lg fa-fw"><i class="fas fa-circle fa-stack-2x"></i><i class="fas fa-arrow-down fa-stack-1x fa-inverse"></i></span>');
+    picker = createDiv();
     picker.size(spacing);
     picker.style('text-align', 'center');
+    changeBrushSize(0);
+    
+    // Generate the increase brush size button
+    buttonIncreaseBrushSize = createButton('<span class="fa-stack"><i class="fas fa-paint-brush fa-stack-2x"></i><i class="fas fa-plus fa-stack-1x"></i></span>');
+    buttonIncreaseBrushSize.position(width, 0);
+    buttonIncreaseBrushSize.size(50);
+    buttonIncreaseBrushSize.attribute('title', 'Increase brush size');
+    buttonIncreaseBrushSize.mousePressed(increaseBrushSize);
+    
+    // Generate the decrease brush size button
+    buttonDecreaseBrushSize = createButton('<span class="fa-stack"><i class="fas fa-paint-brush fa-stack-2x"></i><i class="fas fa-minus fa-stack-1x"></i></span>');
+    buttonDecreaseBrushSize.position(width, 50);
+    buttonDecreaseBrushSize.size(50);
+    buttonDecreaseBrushSize.attribute('title', 'Decrease brush size');
+    buttonDecreaseBrushSize.mousePressed(decreaseBrushSize);
     
     // Generate the pose tracking button
-    buttonTracking = createButton('<span class="fa-stack fa-lg fa-fw"><i class="fas fa-walking fa-stack-1x"></i><i class="fas fa-slash fa-stack-1x fa-inverse"></i></span>');
-    buttonTracking.position(width, 0);
+    buttonTracking = createButton('<i class="fas fa-video-slash fa-lg fa-fw"></i>');
+    buttonTracking.position(width, 100);
     buttonTracking.size(50);
-    buttonTracking.style('text-align', 'center');
     buttonTracking.attribute('title', 'Enable pose tracking');
     buttonTracking.mousePressed(trackingToggle);
     
+    // Generate the sound notes detection button
+    buttonListening = createButton('<i class="fas fa-microphone-slash fa-lg fa-fw"></i>');
+    buttonListening.position(width, 150);
+    buttonListening.size(50);
+    buttonListening.attribute('title', 'Enable sound notes detection');
+    buttonListening.mousePressed(listeningToggle);
+    
     // Generate the download canvas button
     buttonDownload = createButton('<i class="fas fa-download fa-lg fa-fw"></i>');
-    buttonDownload.position(width, buttonTracking.size().height);
+    buttonDownload.position(width, 200);
     buttonDownload.size(50);
-    buttonDownload.style('text-align', 'center');
     buttonDownload.attribute('title', 'Download canvas');
     buttonDownload.mousePressed(canvasDownload);
     
-    // Generate the clean canvas button
-    buttonClean = createButton('<i class="fas fa-broom fa-lg fa-fw"></i>');
-    buttonClean.position(width, buttonTracking.size().height + buttonDownload.size().height);
-    buttonClean.size(50);
-    buttonClean.style('text-align', 'center');
-    buttonClean.attribute('title', 'Clean canvas');
-    buttonClean.mousePressed(canvasClean);
-
-    // Create a new poseNet method, it will fire an event that fills the poses array everytime a new pose is detected
-    poseNet = ml5.poseNet(video);
-    poseNet.on('pose', function(results) {
-        poses = results;
-    });
-    
-    // Hide the video
-    video.hide();
+    // Generate the reset canvas button
+    buttonReset = createButton('<i class="fas fa-recycle fa-lg fa-fw"></i>');
+    buttonReset.position(width, 250);
+    buttonReset.size(50);
+    buttonReset.attribute('title', 'Reset canvas');
+    buttonReset.mousePressed(canvasReset);
     
     // Start canvas original state
-    canvasClean();
+    canvasReset();
     
 }
 
 // Draw on canvas (p5.js specific)
 function draw() {
     
-    // Select the color from palette based on mouse position
-    for(let i = 0; i < colors.length; i++) {
-        if(mouseX > i * spacing && mouseX < (i * spacing) + spacing && mouseY > height && mouseY < window.innerHeight) {
-            brushColor = colors[i];
+    // If mouse over color palette
+    if(mouseY >= height && mouseY <= window.innerHeight) {
+        
+        // Select the color from palette based on mouse position
+        for(let i = 0; i < colors.length; i++) {
+            if(mouseX > (i * spacing) && mouseX <= (i * spacing) + spacing) {
+                brushColor = colors[i];
+                colorPicker(brushColor);
+                let clickEvent = document.createEvent('MouseEvents');
+                clickEvent.initEvent('mouseup', true, true);
+                document.querySelector('canvas').dispatchEvent(clickEvent);
+                break;
+            }
+        }
+        
+    // If sound notes detection is active and the mouse isn't over color palette
+    } else if(listening && mouseY < height) {
+    
+        // Detect audio frequency from signal using ACF2+
+        let buffer = new Float32Array(2048);
+        audioAnalyser.getFloatTimeDomainData(buffer);
+        let frequency = acf2plus(buffer);
+
+        // If an audio frequency exists
+        if(frequency) {
+
+            // Calculate sound note from audio frequency
+            let note = (round(12 * (Math.log(frequency / 440) / Math.log(2))) + 69) % 12;
+
+            // Use sound note to select color from palette
+            brushColor = colors[note];
             colorPicker(brushColor);
-            let clickEvent = document.createEvent('MouseEvents');
-            clickEvent.initEvent('mouseup', true, true);
-            document.querySelector('canvas').dispatchEvent(clickEvent);
+
         }
     }
     
-    // If the camera detects one or morse poses and tracking is active
+    // If pose tracking is active and human poses detected
     if(tracking && poses.length > 0) {
         
         // For each pose
         for(let i = 0; i < poses.length; i += 1) {
-            
-            // If tracking is active, there's an audio stream and the mouse isn't on color palette
-            if(tracking && audio && mouseY <= height) {
-                
-                // Detect audio frequency from signal using ACF2+
-                let buffer = new Float32Array(2048);
-                audioAnalyser.getFloatTimeDomainData(buffer);
-                let frequency = acf2plus(buffer);
-                
-                // If an audio frequency exists
-                if(frequency) {
-                    
-                    // Calculate sound note from audio frequency
-                    let note = (round(12 * (Math.log(frequency / 440) / Math.log(2))) + 69) % 12;
-                    
-                    // Use sound note to select color from palette
-                    brushColor = colors[note];
-                    colorPicker(brushColor);
-
-                }
-            }
             
             // Select the pose
             let pose = poses[i].pose,
@@ -286,28 +289,28 @@ function draw() {
                 leftAnkle = pose['leftAnkle'],
                 rightAnkle = pose['rightAnkle'];
             
-            // If left wrist found and tracking is active
+            // If left wrist found
             if(trackingBodyParts.leftWrist && leftWrist.confidence > 0.60) {
                 
                 // Start painting in left wrist position
                 paint(leftWrist.x, leftWrist.y);
             }
 
-            // If right wrist found and tracking is active
+            // If right wrist found
             if(trackingBodyParts.rightWrist && rightWrist.confidence > 0.60) {
 
                 // Start painting in right wrist position
                 paint(rightWrist.x, rightWrist.y);
             }
 
-            // If left ankle found and tracking is active
+            // If left ankle found
             if(trackingBodyParts.leftAnkle && leftAnkle.confidence > 0.60) {
                 
                 // Start painting in left ankle position
                 paint(leftAnkle.x, leftAnkle.y);
             }
 
-            // If right ankle found and tracking is active
+            // If right ankle found
             if(trackingBodyParts.rightAngle && rightAnkle.confidence > 0.60) {
                 
                 // Start painting in right ankle position
@@ -343,14 +346,23 @@ function mouseDragged() {
     
     // Save mouse position
     if(mouseIsPressed) saveMouse();
+    
 }
 
-// Set canvas original state
-function canvasClean() {
-    clear();
-    brushColor = random(colors);
-    background(bgColor);
-    colorPicker(brushColor);
+// Increase brush radio
+function increaseBrushSize() {
+    changeBrushSize(1);
+}
+
+// Decrease brush radio
+function decreaseBrushSize() {
+    changeBrushSize(-1);
+}
+
+// Increase/decrease brush radio
+function changeBrushSize(i) {
+    brushRadius = constrain((i * 8) + brushRadius, 8, 64);
+    picker.html('<span class="fa-stack fa-lg fa-fw"><i class="fas fa-circle fa-stack-2x"></i><span class="fa-stack-1x fa-inverse">' + 2 * brushRadius + '</span></span>');
 }
 
 // Download canvas as image
@@ -358,20 +370,59 @@ function canvasDownload() {
     saveCanvas('watercolor-' + new Date().getTime(), 'jpg');
 }
 
-// Toggle pose tracking status and enable an audio stream for the first time
+// Set canvas original state
+function canvasReset() {
+    clear();
+    brushColor = random(colors);
+    background(bgColor);
+    colorPicker(brushColor);
+}
+
+
+// Toggle pose tracking status
 function trackingToggle() {
     
-    // Toggle pose tracking status
-    if(tracking) {
-        tracking = false;
-        buttonTracking.html('<span class="fa-stack fa-lg fa-fw"><i class="fas fa-walking fa-stack-1x"></i><i class="fas fa-slash fa-stack-1x fa-inverse"></i></span>');    
-    } else {
-        tracking = true;
-        buttonTracking.html('<span class="fa-stack fa-lg fa-fw"><i class="fas fa-walking fa-stack-1x"></i></span>');
+    // Enable the real-time human pose detection model for the first time
+    if(! poseNet) {
+        let mediaType = {
+                video: {
+                    mandatory: {
+                        maxWidth: width,
+                    },
+                optional: [{
+                    maxFrameRate: drawFrameRate,
+                }],
+                },
+                audio: false,
+            };
+        video = createCapture(mediaType, function () {
+            video.size(width, AUTO);
+            poseNet = ml5.poseNet(video);
+            poseNet.on('pose', function(r) {
+                poses = r;
+            });
+            video.hide();
+            trackingToggle();
+        });
     }
     
-    // Enable the audio stream
-    if(! audio) {
+    // Toggle status
+    if(poseNet && tracking) {
+        tracking = false;
+        buttonTracking.html('<i class="fas fa-video-slash fa-lg fa-fw"></i>');
+        buttonTracking.attribute('title', 'Enable pose tracking');
+    } else if(poseNet) {
+        tracking = true;
+        buttonTracking.html('<i class="fas fa-video fa-lg fa-fw"></i>');
+        buttonTracking.attribute('title', 'Disable pose tracking');
+    }
+}
+
+// Toggle sound notes detection status
+function listeningToggle() {
+    
+    // Enable the audio node for the first time
+    if(! audioAnalyser) {
         navigator.getUserMedia = navigator.getUserMedia || navigator.webkitGetUserMedia;
         navigator.getUserMedia(
             {
@@ -383,12 +434,23 @@ function trackingToggle() {
                 audioAnalyser = audio.createAnalyser();
                 audioAnalyser.fftSize = 2048;
                 audioMic.connect(audioAnalyser);
+                listeningToggle();
             },
             function (error) {
                 console.log(error);
             }
         );
-        
+    }
+
+    // Toggle status
+    if(audioAnalyser && listening) {
+        listening = false;
+        buttonListening.html('<i class="fas fa-microphone-slash fa-lg fa-fw"></i>');
+        buttonListening.attribute('title', 'Enable sound notes detection');
+    } else if(audioAnalyser) {
+        listening = true;
+        buttonListening.html('<i class="fas fa-microphone fa-lg fa-fw"></i>');
+        buttonListening.attribute('title', 'Disable sound notes detection');
     }
     
 }
