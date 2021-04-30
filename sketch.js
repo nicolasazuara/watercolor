@@ -33,17 +33,13 @@
     -   Microphone (optional)
     
     Notes:
-    -   Mobile devices aren't an option:
-        p5.js camera implementation is buggy and not mirrored by default (front-facing camera);
-        ml5.js is too CPU intensive, draining too much power;
-        Real-time audio analysis is the final nail in the coffin;
+    -   The canvas must be mirrored when using camera as input.
     -   A background color is required for color blending.
     -   Canvas resizing is too much of a hassle.
 */
 
 let drawFrameRate = 30,                                 // Shared frame rate between video and canvas
     brushRadius = 32,                                   // Radius of the brush used for painting
-    bgColor = 'linen',                                  // Color for the canvas (user-defined)
     colors = [                                          // Color palette, representing music notes
         '#00ff00',                                      // Blue             C
         '#00ff80',                                      // Blue-violet      C#
@@ -86,13 +82,13 @@ let drawFrameRate = 30,                                 // Shared frame rate bet
     };
 
 // Class for paint brush (a single layer)
-class brush {
+class Brush {
     
     constructor(v) {
-        this.vertices = v;                      // Array of vertices for the brush shape
-        this.newVertices = [];                  // Array of vertices for the paint shape
-        this.color = color(brushColor);         // Color for the paint
-        this.color.setAlpha(2);                 // Opacity of 2/255 for the paint shape
+        this.vertices = v;                              // Array of vertices for the brush shape
+        this.newVertices = [];                          // Array of vertices for the paint shape
+        this.color = color(brushColor);                 // Color for the paint
+        this.color.setAlpha(round(random(1, 2)));       // Opacity for the brush shape
     }
     
     // This method simulates the paint expansion
@@ -135,19 +131,19 @@ class brush {
 }
 
 // Class for brush strokes (generate layers or brushes)
-class strokes {
+class Strokes {
     
-    constructor(brushObject) {
-        this.total = random(10, 30);    // Total of paint layers
+    constructor(b) {
+        this.total = random(8, 32);     // Total of paint layers
         this.layers = [];               // Array of paint layers
         
         // For the total of the paint layers, generate a new brush stroke and store it in the paint layers
         for(let i = 0; i < this.total; i++) {
             let vertices = [];
-            for(let j = 0; j < brushObject.vertices.length; j++) {
-                vertices.push(brushObject.vertices[j]);
+            for(let j = 0; j < b.vertices.length; j++) {
+                vertices.push(b.vertices[j]);
             }
-            this.layers.push(new brush(vertices));
+            this.layers.push(new Brush(vertices));
         }
     }
     
@@ -188,6 +184,7 @@ function setup() {
     picker = createDiv();
     picker.size(spacing);
     picker.style('text-align', 'center');
+    picker.style('user-select', 'none');
     changeBrushSize(0);
     
     // Generate the increase brush size button
@@ -279,6 +276,10 @@ function draw() {
     // If pose tracking is active and human poses detected
     if(tracking && poses.length > 0) {
         
+        // Mirror the canvas
+        translate(width, 0);
+        scale(-1, 1);
+        
         // For each pose
         for(let i = 0; i < poses.length; i += 1) {
             
@@ -293,28 +294,28 @@ function draw() {
             if(trackingBodyParts.leftWrist && leftWrist.confidence > 0.60) {
                 
                 // Start painting in left wrist position
-                paint(leftWrist.x, leftWrist.y);
+                paint(leftWrist);
             }
 
             // If right wrist found
             if(trackingBodyParts.rightWrist && rightWrist.confidence > 0.60) {
 
                 // Start painting in right wrist position
-                paint(rightWrist.x, rightWrist.y);
+                paint(rightWrist);
             }
 
             // If left ankle found
             if(trackingBodyParts.leftAnkle && leftAnkle.confidence > 0.60) {
                 
                 // Start painting in left ankle position
-                paint(leftAnkle.x, leftAnkle.y);
+                paint(leftAnkle);
             }
 
             // If right ankle found
             if(trackingBodyParts.rightAngle && rightAnkle.confidence > 0.60) {
                 
                 // Start painting in right ankle position
-                paint(rightAnkle.x, rightAnkle.y);
+                paint(rightAnkle);
             }
             
         }
@@ -323,7 +324,7 @@ function draw() {
     } else if(lastMouse.x > 0 && lastMouse.y > 0) {
 
         // Start painting in saved mouse position
-        paint(lastMouse.x, lastMouse.y);
+        paint(lastMouse);
 
         // Reset last mouse position
         lastMouse = {
@@ -374,7 +375,7 @@ function canvasDownload() {
 function canvasReset() {
     clear();
     brushColor = random(colors);
-    background(bgColor);
+    background('#ffffff');
     colorPicker(brushColor);
 }
 
@@ -471,8 +472,8 @@ function saveMouse() {
 }
 
 // Paint using brush and strokes classes, specifying a vertex
-function paint(x, y) {
-    let w = new strokes(new brush([ [x, y] ])),
+function paint(v) {
+    let w = new Strokes(new Brush([ [v.x, v.y] ])),
         t = random(1, 5);
     for(let i = 0; i < 5; i++) {
         w.deform();
