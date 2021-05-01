@@ -36,31 +36,49 @@
     -   The canvas must be mirrored when using camera as input.
     -   A background color is required for color blending.
     -   Canvas resizing is too much of a hassle.
+    -   Mobile cam implementation is buggy
 */
 
 let drawFrameRate = 30,                                 // Shared frame rate between video and canvas
     brushRadius = 32,                                   // Radius of the brush used for painting
     colors = [                                          // Color palette, representing music notes
-        '#00ff00',                                      // Blue             C
-        '#00ff80',                                      // Blue-violet      C#
-        '#00ffff',                                      // Violet           D
-        '#0080ff',                                      // Red-violet       D#
-        '#0000ff',                                      // Red              E
-        '#8000ff',                                      // Red-orange       F
-        '#ff00ff',                                      // Orange           F#
-        '#ff0080',                                      // Yellow-orange    G
-        '#ff0000',                                      // Yellow           G#
-        '#ff8000',                                      // Yellow-green     A
-        '#ffff00',                                      // Green            A#
-        '#80ff00',                                      // Blue-green       B
+        '#ff0000',                                      // Red
+        '#ff8000',                                      // Red + yellow
+        '#ffff00',                                      // Yellow
+        '#80ff00',                                      // Green + yellow
+        '#00ff00',                                      // Green
+        '#00ff80',                                      // Green + cyan
+        '#00ffff',                                      // Cyan
+        '#0080ff',                                      // Blue + cyan
+        '#0000ff',                                      // Blue
+        '#8000ff',                                      // Blue + magenta
+        '#ff00ff',                                      // Magenta
+        '#ff0080',                                      // Red + magenta
+        '#ffffff',                                      // White
+        '#000000',                                      // Black
     ],
+    notes = [
+        4,                                              // C
+        5,                                              // C#
+        6,                                              // D
+        7,                                              // D#
+        8,                                              // E
+        9,                                              // F
+        10,                                             // F#
+        11,                                             // G
+        0,                                              // G#
+        1,                                              // A
+        2,                                              // A#
+        3,                                              // B
+    ],
+    tracking = false,                                   // Pose tracking status, disabled by default
     trackingBodyParts = {                               // Body parts to be tracked on video
         leftWrist: true,
         rightWrist: true,
         leftAnkle: true,
         rightAngle: true,
     },
-    tracking = false,                                   // Pose tracking status, disabled by default
+    trackingConfidence = 0.6,                           // Minimum confidence on the tracked body parts
     listening = false,                                  // Sound notes detection status, disabled by default
     video,                                              // Video container
     audio,                                              // Audio context
@@ -93,21 +111,28 @@ class Brush {
     
     // This method simulates the paint expansion
     deform() {
+        
         // Placeholders for new vertices
         let x = 0,
             y = 0;
         
         // For each vertex of the brush, generate new vertices for the paint based on the vertex siblings, using brush radius as distortion
         for(let i = 0; i < this.vertices.length - 1; i++) {
-            x = (this.vertices[i][0] + this.vertices[i + 1][0]) / 2 + random(-brushRadius, brushRadius);
-            y = (this.vertices[i][1] + this.vertices[i + 1][1]) / 2 + random(-brushRadius, brushRadius);
-            this.newVertices.push([x, y]);
+            x = (this.vertices[i].x + this.vertices[i + 1].x) / 2 + random(-brushRadius, brushRadius);
+            y = (this.vertices[i].y + this.vertices[i + 1].y) / 2 + random(-brushRadius, brushRadius);
+            this.newVertices.push({
+                x: x,
+                y: y,
+            });
         }
         
         // Generate another vertex for the paint based on the average of the first and last vertex,  using brush radius as distortion
-        x = (this.vertices[0][0] + this.vertices[this.vertices.length - 1][0]) / 2 + random(-brushRadius, brushRadius);
-        y = (this.vertices[0][1] + this.vertices[this.vertices.length - 1][1]) / 2 + random(-brushRadius, brushRadius);
-        this.newVertices.push([x, y]);
+        x = (this.vertices[0].x + this.vertices[this.vertices.length - 1].x) / 2 + random(-brushRadius, brushRadius);
+        y = (this.vertices[0].y + this.vertices[this.vertices.length - 1].y) / 2 + random(-brushRadius, brushRadius);
+        this.newVertices.push({
+            x: x,
+            y: y,
+        });
         
         // Add each vertex of the paint to the brush vertices 
         for(let i = 0; i < this.newVertices.length; i++) {
@@ -118,13 +143,13 @@ class Brush {
         this.newVertices = [];
     }
     
-    // This method displays the paint, drawing a shape using the brush vertices and filling it with the brush color
-    display() {        
+    // This method shows the paint, drawing a shape using the brush vertices and filling it with the brush color
+    show() {        
         noStroke();
         fill(this.color);
         beginShape();
         for(let i = 0; i < this.vertices.length; i++) {
-            vertex(this.vertices[i][0], this.vertices[i][1]);
+            vertex(this.vertices[i].x, this.vertices[i].y);
         }
         endShape(CLOSE);
     }
@@ -149,15 +174,17 @@ class Strokes {
     
     // This method simulates the paint expansion as a whole
     deform() {
-        for(let i = 0; i < this.total; i++) {
-            this.layers[i].deform();
+        for(let i = random(8); i > 0; i--) {
+            for(let i = 0; i < this.total; i++) {
+                this.layers[i].deform();
+            }
         }
     }
     
-    // This method displays the paint layers as a whole
-    display() {
+    // This method shows the paint layers as a whole
+    show() {
         for(let i = 0; i < this.total; i++) {
-            this.layers[i].display();
+            this.layers[i].show();
         }
     }
 }
@@ -174,10 +201,10 @@ function setup() {
     // Generate the color palette at the bottom of the page
     for(let i = 0; i < colors.length; i++) {
         let colorPick = createDiv('&nbsp;');
-        colorPick.size(spacing, 50);
+        colorPick.size(spacing, 49);
         colorPick.style('background-color', colors[i]);
         colorPick.style('user-select', 'none');
-        colorPick.position(i * spacing, height);
+        colorPick.position(i * spacing, height + 1);
     }
     
     // Generate the color picker indicator
@@ -267,7 +294,7 @@ function draw() {
             let note = (round(12 * (Math.log(frequency / 440) / Math.log(2))) + 69) % 12;
 
             // Use sound note to select color from palette
-            brushColor = colors[note];
+            brushColor = colors[ notes[ constrain(note, 0, notes.length) ] ];
             colorPicker(brushColor);
 
         }
@@ -291,28 +318,28 @@ function draw() {
                 rightAnkle = pose['rightAnkle'];
             
             // If left wrist found
-            if(trackingBodyParts.leftWrist && leftWrist.confidence > 0.60) {
+            if(trackingBodyParts.leftWrist && leftWrist.confidence > trackingConfidence) {
                 
                 // Start painting in left wrist position
                 paint(leftWrist);
             }
 
             // If right wrist found
-            if(trackingBodyParts.rightWrist && rightWrist.confidence > 0.60) {
+            if(trackingBodyParts.rightWrist && rightWrist.confidence > trackingConfidence) {
 
                 // Start painting in right wrist position
                 paint(rightWrist);
             }
 
             // If left ankle found
-            if(trackingBodyParts.leftAnkle && leftAnkle.confidence > 0.60) {
+            if(trackingBodyParts.leftAnkle && leftAnkle.confidence > trackingConfidence) {
                 
                 // Start painting in left ankle position
                 paint(leftAnkle);
             }
 
             // If right ankle found
-            if(trackingBodyParts.rightAngle && rightAnkle.confidence > 0.60) {
+            if(trackingBodyParts.rightAngle && rightAnkle.confidence > trackingConfidence) {
                 
                 // Start painting in right ankle position
                 paint(rightAnkle);
@@ -385,6 +412,7 @@ function trackingToggle() {
     
     // Enable the real-time human pose detection model for the first time
     if(! poseNet) {
+        
         let mediaType = {
                 video: {
                     mandatory: {
@@ -405,6 +433,7 @@ function trackingToggle() {
             video.hide();
             trackingToggle();
         });
+        
     }
     
     // Toggle status
@@ -473,12 +502,9 @@ function saveMouse() {
 
 // Paint using brush and strokes classes, specifying a vertex
 function paint(v) {
-    let w = new Strokes(new Brush([ [v.x, v.y] ])),
-        t = random(1, 5);
-    for(let i = 0; i < 5; i++) {
-        w.deform();
-    }
-    w.display();
+    let p = new Strokes(new Brush([v]));
+    p.deform();
+    p.show();
 }
 
 // ACF2+ signal frequency detection method
@@ -486,7 +512,7 @@ function acf2plus(buffer) {
     
     // Measure the signal
     let rms = 0;
-    for(i = 0; i < buffer.length; i++) {
+    for(let i = 0; i < buffer.length; i++) {
         rms += buffer[i] * buffer[i];
     }
     rms = Math.sqrt(rms / buffer.length);
